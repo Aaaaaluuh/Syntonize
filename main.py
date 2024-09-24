@@ -237,28 +237,25 @@ import requests
 # Carregar variáveis de ambiente
 load_dotenv()
 
-def admin_configs():
-    user_config = st.secrets["client"]
+# Verifique se as variáveis estão sendo carregadas corretamente
+CLIENT_ID = os.getenv('CLIENT_ID')
+CLIENT_SECRET = os.getenv('CLIENT_SECRET')
+print("CLIENT_ID:", CLIENT_ID)  # Para verificar se estão corretos
+print("CLIENT_SECRET:", CLIENT_SECRET)
 
-    client_id = user_config['CLIENT_ID']
-    client_secret = user_config['CLIENT_SECRET']
+REDIRECT_URI = "https://syntonize.streamlit.app"  # URL de redirecionamento após o login
 
-    return client_id, client_secret
+# Se as variáveis estiverem corretas, inicialize o SpotifyOAuth
+if CLIENT_ID and CLIENT_SECRET:
+    sp_oauth = SpotifyOAuth(
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        redirect_uri=REDIRECT_URI,
+        scope="user-library-read user-top-read playlist-modify-private"
+    )
+else:
+    st.error("As variáveis de ambiente CLIENT_ID ou CLIENT_SECRET não foram carregadas corretamente.")
 
-# Configurar a autenticação do Spotify
-CLIENT_ID, CLIENT_SECRET = admin_configs()
-REDIRECT_URI = "https://syntonize.streamlit.app"  # Usado pelo Spotify para redirecionar após login
-
-# Definir os escopos que queremos do usuário
-scope = "user-library-read user-top-read playlist-modify-private"
-
-# Inicializa a autenticação OAuth do Spotipy
-sp_oauth = SpotifyOAuth(
-    client_id=CLIENT_ID,
-    client_secret=CLIENT_SECRET,
-    redirect_uri=REDIRECT_URI,
-    scope=scope
-)
 
 # Função para obter o token de acesso
 def get_token():
