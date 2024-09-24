@@ -235,25 +235,18 @@ import requests
 import jwt
 import datetime
 
-# Carregar variáveis de ambiente
-load_dotenv()
+# Acessar as variáveis diretamente de st.secrets
+CLIENT_ID = st.secrets["client"]["CLIENT_ID"]
+CLIENT_SECRET = st.secrets["client"]["CLIENT_SECRET"]
+REDIRECT_URI = st.secrets["client"]["REDIRECT_URI"]
 
-# Configurar a autenticação do Spotify
-CLIENT_ID = os.getenv('CLIENT_ID')
-CLIENT_SECRET = os.getenv('CLIENT_SECRET')
-REDIRECT_URI = "https://syntonize.streamlit.app"  # Usado pelo Spotify para redirecionar após login
-
-# Definir os escopos que queremos do usuário
-scope = "user-library-read user-top-read playlist-modify-private"
-
-# Inicializa a autenticação OAuth do Spotipy
+# Configuração do OAuth
 sp_oauth = SpotifyOAuth(
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET,
     redirect_uri=REDIRECT_URI,
-    scope=scope
+    scope="user-library-read user-top-read playlist-modify-private"
 )
-
 # Chave secreta para o JWT
 JWT_SECRET = "sua_chave_secreta"
 
