@@ -232,21 +232,16 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import streamlit as st
 import requests
+import jwt
+import datetime
 
+# Carregar variáveis de ambiente
+load_dotenv()
 
-# Acessar as variáveis diretamente de st.secrets
-CLIENT_ID = st.secrets["client"]["CLIENT_ID"]
-CLIENT_SECRET = st.secrets["client"]["CLIENT_SECRET"]
-REDIRECT_URI = 'https://syntonize.streamlit.app'
-
-# Configuração do OAuth
-sp_oauth = SpotifyOAuth(
-    client_id=CLIENT_ID,
-    client_secret=CLIENT_SECRET,
-    redirect_uri=REDIRECT_URI,
-    scope="user-library-read user-top-read playlist-modify-private"
-)
-
+# Configurar a autenticação do Spotify
+CLIENT_ID = os.getenv('CLIENT_ID')
+CLIENT_SECRET = os.getenv('CLIENT_SECRET')
+REDIRECT_URI = "https://syntonize.streamlit.app"  # Usado pelo Spotify para redirecionar após login
 
 # Definir os escopos que queremos do usuário
 scope = "user-library-read user-top-read playlist-modify-private"
@@ -259,9 +254,30 @@ sp_oauth = SpotifyOAuth(
     scope=scope
 )
 
+# Chave secreta para o JWT
+JWT_SECRET = "sua_chave_secreta"
+
+# Função para criar token JWT
+def create_jwt(user_id, access_token):
+    payload = {
+        'user_id': user_id,
+        'access_token': access_token,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)  # Expira em 1 hora
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm='HS256')
+    return token
+
+# Função para decodificar o token JWT
+def decode_jwt(token):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None  # Token expirado
+
 # Função para obter o token de acesso
-def get_token(auth_code):
-    token_info = sp_oauth.get_access_token(auth_code)
+def get_token():
+    token_info = sp_oauth.get_access_token(as_dict=False)
     return token_info
 
 # Função para criar header de autenticação
@@ -272,18 +288,18 @@ def get_auth_header(token):
 def get_recommendations(token, seed_genres=None, features=None):
     url = "https://api.spotify.com/v1/recommendations"
     headers = get_auth_header(token)
-    
+
     params = {
         "seed_genres": ",".join(seed_genres) if seed_genres else "",
         "limit": 10
     }
-    
+
     # Adiciona features, se forem fornecidas
     if features:
         params.update(features)
-    
+
     response = requests.get(url, headers=headers, params=params)
-    return response.json().get("tracks", [])
+    return response.json()["tracks"]
 
 # Função para criar playlist no Spotify
 def create_playlist(token, user_id, playlist_name):
@@ -301,47 +317,62 @@ def create_playlist(token, user_id, playlist_name):
 def main():
     st.title("Recomendações de Músicas do Spotify")
 
-    # Link para login via Spotify
-    auth_url = sp_oauth.get_authorize_url()
-    st.markdown(f"[Clique aqui para se autenticar via Spotify]({auth_url})")
+    # Verificar se já existe um token JWT salvo (usuário autenticado)
+    jwt_token = st.session_state.get('jwt_token')
+    
+    if jwt_token:
+        # Decodificar o JWT e usar o token de acesso para fazer requisições
+        payload = decode_jwt(jwt_token)
+        
+        if payload:
+            access_token = payload['access_token']
+            sp = spotipy.Spotify(auth=access_token)
 
-    # Pegar o código de autenticação via query params
-    code = st.experimental_get_query_params().get('code')
+            # Pegar dados do usuário
+            user_info = sp.current_user()
+            st.write(f"Bem-vindo, {user_info['display_name']}!")
 
-    if code:
-        # Trocar o código pelo token de acesso
-        token_info = sp_oauth.get_access_token(code)
-        access_token = token_info['access_token']
-        sp = spotipy.Spotify(auth=access_token)
+            # Escolha de gêneros e características
+            seed_genres = st.multiselect("Escolha gêneros", ['pop', 'rock', 'jazz', 'classical', 'hip-hop'])
+            acousticness = st.slider("Acousticness", 0.0, 1.0, 0.5)
+            danceability = st.slider("Danceability", 0.0, 1.0, 0.5)
+            energy = st.slider("Energy", 0.0, 1.0, 0.5)
 
-        # Pegar dados do usuário
-        user_info = sp.current_user()
-        st.write(f"Bem-vindo, {user_info['display_name']}!")
-
-        # Escolha de gêneros e características
-        seed_genres = st.multiselect("Escolha gêneros", ['pop', 'rock', 'jazz', 'classical', 'hip-hop'])
-        acousticness = st.slider("Acousticness", 0.0, 1.0, 0.5)
-        danceability = st.slider("Danceability", 0.0, 1.0, 0.5)
-        energy = st.slider("Energy", 0.0, 1.0, 0.5)
-
-        # Exibir recomendações com base nas opções do usuário
-        if st.button("Mostrar Recomendações"):
-            features = {
-                "min_acousticness": acousticness,
-                "min_danceability": danceability,
-                "min_energy": energy
-            }
-            tracks = get_recommendations(access_token, seed_genres, features)
-            if tracks:
+            # Exibir recomendações com base nas opções do usuário
+            if st.button("Mostrar Recomendações"):
+                features = {
+                    "acousticness": acousticness,
+                    "danceability": danceability,
+                    "energy": energy
+                }
+                tracks = get_recommendations(access_token, seed_genres, features)
                 for track in tracks:
                     st.write(track['name'], "-", track['artists'][0]['name'])
-            else:
-                st.write("Nenhuma recomendação encontrada.")
 
-        # Criar playlist baseada nas recomendações
-        if st.button("Criar Playlist"):
-            playlist = create_playlist(access_token, user_info['id'], "Minhas Recomendações")
-            st.write(f"Playlist criada: {playlist['external_urls']['spotify']}")
+            # Criar playlist baseada nas recomendações
+            if st.button("Criar Playlist"):
+                playlist = create_playlist(access_token, user_info['id'], "Minhas Recomendações")
+                st.write(f"Playlist criada: {playlist['external_urls']['spotify']}")
+        else:
+            st.error("Sessão expirada. Por favor, faça login novamente.")
+    else:
+        # Link para login via Spotify
+        auth_url = sp_oauth.get_authorize_url()
+        st.markdown(f"[Clique aqui para se autenticar via Spotify]({auth_url})")
+
+        # Obter código de autorização após o login
+        code = st.experimental_get_query_params().get('code')
+        
+        if code:
+            token_info = sp_oauth.get_access_token(code)
+            access_token = token_info['access_token']
+            user_id = token_info['user_id']
+
+            # Gerar JWT e salvar na sessão
+            jwt_token = create_jwt(user_id, access_token)
+            st.session_state['jwt_token'] = jwt_token
+
+            st.experimental_rerun()  # Recarregar a página para usar o token JWT
 
 # Rodar a aplicação Streamlit
 if __name__ == '__main__':
