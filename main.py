@@ -3,47 +3,69 @@ import os
 import base64
 from requests import post, get
 import json
-import spotipy
+# import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import streamlit as st
+import requests
 
+# Carregar variáveis de ambiente
+load_dotenv()
 
+# Configurar a autenticação do Spotify
+CLIENT_ID = os.getenv('CLIENT_ID')
+CLIENT_SECRET = os.getenv('CLIENT_SECRET')
+REDIRECT_URI = "https://syntonize.streamlit.app"  # Usado pelo Spotify para redirecionar após login
 
-def user_configs():
-    user_config = st.secrets["client"]
+# Definir os escopos que queremos do usuário
+scope = "user-library-read user-top-read playlist-modify-private"
 
-    client_id = user_config['CLIENT_ID']
-    client_secret = user_config['CLIENT_SECRET']
+# Inicializa a autenticação OAuth do Spotipy
+sp_oauth = SpotifyOAuth(
+    client_id=CLIENT_ID,
+    client_secret=CLIENT_SECRET,
+    redirect_uri=REDIRECT_URI,
+    scope=scope
+)
 
-    return client_id, client_secret
-
-# load_dotenv()
-# client_id = os.getenv('CLIENT_ID')
-# client_secret = os.getenv('CLIENT_SECRET')
-
-# pegando o token de acesso temporário
-# Primeiro, é necesário fazer um request body -> grant type com as credenciais do client
-
+# Função para obter o token de acesso
 def get_token():
-    client_id, client_secret = user_configs()
-    auth_string = client_id + ":" + client_secret
-    auth_bytes = auth_string.encode("utf-8")
-    auth_base64 = str(base64.b64encode(auth_bytes), "utf-8")
+    token_info = sp_oauth.get_access_token(as_dict=False)
+    return token_info
 
-    url = "https://accounts.spotify.com/api/token"
-    headers = {
-        "Authorization" : "Basic " + auth_base64,
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    data = {"grant_type": "client_credentials"}
-
-    result = post(url, headers=headers, data=data)
-    json_result = json.loads(result.content)
-    token = json_result["access_token"]
-    return token
-
+# Função para criar header de autenticação
 def get_auth_header(token):
-    return{"Authorization": "Bearer " + token}
+    return {"Authorization": "Bearer " + token}
+
+
+##### ESSA AUTENTICAÇÃO É MINHA PRÓPRIA #####
+# def user_configs():
+#     user_config = st.secrets["client"]
+
+#     client_id = user_config['CLIENT_ID']
+#     client_secret = user_config['CLIENT_SECRET']
+
+#     return client_id, client_secret
+
+# def get_token():
+#     client_id, client_secret = user_configs()
+#     auth_string = client_id + ":" + client_secret
+#     auth_bytes = auth_string.encode("utf-8")
+#     auth_base64 = str(base64.b64encode(auth_bytes), "utf-8")
+
+#     url = "https://accounts.spotify.com/api/token"
+#     headers = {
+#         "Authorization" : "Basic " + auth_base64,
+#         "Content-Type": "application/x-www-form-urlencoded"
+#     }
+#     data = {"grant_type": "client_credentials"}
+
+#     result = post(url, headers=headers, data=data)
+#     json_result = json.loads(result.content)
+#     token = json_result["access_token"]
+#     return token
+
+# def get_auth_header(token):
+#     return{"Authorization": "Bearer " + token}
 
 
 # até aqui era pra conseguir o token temporário de acesso a api do spotify
@@ -70,13 +92,13 @@ def get_songs_by_artist(token, artist_id):
 
 
 # Aqui é a função principal 
-def get_recommendations(token, seed_genres=None, features={}):
+def get_recommendations(token, limit=10, seed_genres=None, features={}):
     url = "https://api.spotify.com/v1/recommendations"
     headers = get_auth_header(token)
     
     # Parâmetros de consulta com opção de incluir gêneros
     params = {
-        "limit": 10,  # Define quantas músicas você quer retornar
+        "limit": limit,  # Define quantas músicas você quer retornar
     }
     
     # Incluir gêneros, se fornecidos
@@ -87,9 +109,27 @@ def get_recommendations(token, seed_genres=None, features={}):
     for feature, value in features.items():
         params[f"target_{feature}"] = value
     
-    result = get(url, headers=headers, params=params)
-    json_result = json.loads(result.content)
-    return json_result["tracks"]
+    # result = get(url, headers=headers, params=params)
+    # json_result = json.loads(result.content)
+    # return json_result["tracks"]
+
+    result = requests.get(url, headers=headers, params=params)
+
+    # Verificar se a requisição foi bem-sucedida
+    if result.status_code != 200:
+        st.error(f"Erro na requisição: {result.status_code}")
+        st.write(result.json())  # Para depuração
+        return []
+
+    # Processar a resposta
+    json_result = result.json()
+
+    if 'tracks' in json_result:
+        return json_result["tracks"]
+    else:
+        st.warning("Nenhuma recomendação encontrada.")
+        st.write(json_result)  # Mostrar o JSON completo para depuração
+        return []
 
 
 def create_playlist(token, user_id, name="Recomendações do App"):
@@ -124,13 +164,13 @@ st.header("Escolha as características das músicas")
 # Características das músicas (features)
 danceability = st.slider("Selecione a Dançabilidade:", 0.0, 1.0, 0.5)
 energy = st.slider("Selecione a Energia:", 0.0, 1.0, 0.5)
-acousticness = st.slider("Selecione a Acusticidade:", 0.0, 1.0, 0.5)
+# acousticness = st.slider("Selecione a Acusticidade:", 0.0, 1.0, 0.5)
 instrumentalness = st.slider("Selecione a Instrumentalidade:", 0.0, 1.0, 0.5)
 speechiness = st.slider("Selecione a quantidade de fala:", 0.0, 1.0, 0.5)
 
 # Seleção de gêneros
 genres = st.multiselect(
-    "Selecione os gêneros musicais (opcional)",
+    "Selecione até 5 gêneros musicais que você deseja",
     ["acoustic", "afrobeat", "alt-rock", "alternative", "ambient", "anime", "black-metal", "blues", 
      "bossanova", "brazil", "breakbeat", "chill", "classical", "club", "country", "dance", "dancehall", "death-metal", 
      "deep-house", "detroit-techno", "disco", "disney", "drum-and-bass", "dubstep", "electro", "electronic", "emo", "folk", 
@@ -150,13 +190,14 @@ if st.button("Gerar Recomendação"):
     features = {
         "danceability": danceability,
         "energy": energy,
-        "acousticness": acousticness,
+        # "acousticness": acousticness,
         "instrumentalness": instrumentalness,
         "speechiness": speechiness
     }
     
     # Removendo as features que não foram ajustadas
     features = {k: v for k, v in features.items() if v is not None}
+    st.write(features)
 
     # Verificação de gênero antes da chamada
     if genres:
@@ -215,11 +256,11 @@ if st.button("Gerar Recomendação"):
 
 # import streamlit as st
 # import spotipy
-# from spotipy.oauth2 import SpotifyOAuth
 # import requests
 # import base64
 # import os
 # import json
+# from spotipy.oauth2 import SpotifyOAuth
 # from dotenv import load_dotenv
 
 # # Carregar variáveis de ambiente
