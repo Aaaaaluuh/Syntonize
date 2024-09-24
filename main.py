@@ -223,7 +223,6 @@
 
 
 ########################################################################################################################################
-
 from dotenv import load_dotenv
 import os
 import base64
@@ -234,38 +233,40 @@ from spotipy.oauth2 import SpotifyOAuth
 import streamlit as st
 import requests
 
-# Carregar variáveis de ambiente
-load_dotenv()
 
-# Verifique se as variáveis estão sendo carregadas corretamente
-CLIENT_ID = os.getenv('CLIENT_ID')
-CLIENT_SECRET = os.getenv('CLIENT_SECRET')
-print("CLIENT_ID:", CLIENT_ID)  # Para verificar se estão corretos
-print("CLIENT_SECRET:", CLIENT_SECRET)
+# Acessar as variáveis diretamente de st.secrets
+CLIENT_ID = st.secrets["client"]["CLIENT_ID"]
+CLIENT_SECRET = st.secrets["client"]["CLIENT_SECRET"]
+REDIRECT_URI = st.secrets["client"]["REDIRECT_URI"]
 
-REDIRECT_URI = "https://syntonize.streamlit.app"  # URL de redirecionamento após o login
+# Configuração do OAuth
+sp_oauth = SpotifyOAuth(
+    client_id=CLIENT_ID,
+    client_secret=CLIENT_SECRET,
+    redirect_uri=REDIRECT_URI,
+    scope="user-library-read user-top-read playlist-modify-private"
+)
 
-# Se as variáveis estiverem corretas, inicialize o SpotifyOAuth
-if CLIENT_ID and CLIENT_SECRET:
-    sp_oauth = SpotifyOAuth(
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        redirect_uri=REDIRECT_URI,
-        scope="user-library-read user-top-read playlist-modify-private"
-    )
-else:
-    st.error("As variáveis de ambiente CLIENT_ID ou CLIENT_SECRET não foram carregadas corretamente.")
 
+# Definir os escopos que queremos do usuário
+scope = "user-library-read user-top-read playlist-modify-private"
+
+# Inicializa a autenticação OAuth do Spotipy
+sp_oauth = SpotifyOAuth(
+    client_id=CLIENT_ID,
+    client_secret=CLIENT_SECRET,
+    redirect_uri=REDIRECT_URI,
+    scope=scope
+)
 
 # Função para obter o token de acesso
-def get_token():
-    token_info = sp_oauth.get_access_token(as_dict=False)
+def get_token(auth_code):
+    token_info = sp_oauth.get_access_token(auth_code)
     return token_info
 
 # Função para criar header de autenticação
 def get_auth_header(token):
     return {"Authorization": "Bearer " + token}
-
 
 # Função para buscar recomendações de músicas
 def get_recommendations(token, seed_genres=None, features=None):
@@ -282,7 +283,7 @@ def get_recommendations(token, seed_genres=None, features=None):
         params.update(features)
     
     response = requests.get(url, headers=headers, params=params)
-    return response.json()["tracks"]
+    return response.json().get("tracks", [])
 
 # Função para criar playlist no Spotify
 def create_playlist(token, user_id, playlist_name):
@@ -304,10 +305,11 @@ def main():
     auth_url = sp_oauth.get_authorize_url()
     st.markdown(f"[Clique aqui para se autenticar via Spotify]({auth_url})")
 
-    # Obter código de autorização após o login
-    code = st.query_params['code']
-    
+    # Pegar o código de autenticação via query params
+    code = st.experimental_get_query_params().get('code')
+
     if code:
+        # Trocar o código pelo token de acesso
         token_info = sp_oauth.get_access_token(code)
         access_token = token_info['access_token']
         sp = spotipy.Spotify(auth=access_token)
@@ -325,13 +327,16 @@ def main():
         # Exibir recomendações com base nas opções do usuário
         if st.button("Mostrar Recomendações"):
             features = {
-                "acousticness": acousticness,
-                "danceability": danceability,
-                "energy": energy
+                "min_acousticness": acousticness,
+                "min_danceability": danceability,
+                "min_energy": energy
             }
             tracks = get_recommendations(access_token, seed_genres, features)
-            for track in tracks:
-                st.write(track['name'], "-", track['artists'][0]['name'])
+            if tracks:
+                for track in tracks:
+                    st.write(track['name'], "-", track['artists'][0]['name'])
+            else:
+                st.write("Nenhuma recomendação encontrada.")
 
         # Criar playlist baseada nas recomendações
         if st.button("Criar Playlist"):
