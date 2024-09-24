@@ -358,6 +358,7 @@ def main():
         
         if code:
             token_info = sp_oauth.get_access_token(code)
+            print(token_info)
             access_token = token_info['access_token']
             user_id = token_info['user_id']
 
