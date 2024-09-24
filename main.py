@@ -237,9 +237,16 @@ import requests
 # Carregar variáveis de ambiente
 load_dotenv()
 
+def admin_configs():
+    user_config = st.secrets["client"]
+
+    client_id = user_config['CLIENT_ID']
+    client_secret = user_config['CLIENT_SECRET']
+
+    return client_id, client_secret
+
 # Configurar a autenticação do Spotify
-CLIENT_ID = os.getenv('CLIENT_ID')
-CLIENT_SECRET = os.getenv('CLIENT_SECRET')
+CLIENT_ID, CLIENT_SECRET = admin_configs()
 REDIRECT_URI = "https://syntonize.streamlit.app"  # Usado pelo Spotify para redirecionar após login
 
 # Definir os escopos que queremos do usuário
