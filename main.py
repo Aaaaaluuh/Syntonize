@@ -237,7 +237,7 @@ import requests
 # Acessar as variáveis diretamente de st.secrets
 CLIENT_ID = st.secrets["client"]["CLIENT_ID"]
 CLIENT_SECRET = st.secrets["client"]["CLIENT_SECRET"]
-REDIRECT_URI = st.secrets["client"]["REDIRECT_URI"]
+REDIRECT_URI = 'https://syntonize.streamlit.app'
 
 # Configuração do OAuth
 sp_oauth = SpotifyOAuth(
